@@ -1,0 +1,24 @@
+# ESP-IDF build output
+build/
+.cache/
+
+# IDF Component Manager - auto-downloaded, can be restored via idf.py update-dependencies
+managed_components/
+
+# Large font files (can be re-added manually if needed)
+*.ttf
+*.TTF
+
+# Sensitive config - WiFi credentials
+assert/wifi_config.txt
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# sdkconfig is intentionally tracked (do NOT ignore)
+# sdkconfig
