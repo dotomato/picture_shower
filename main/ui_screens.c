@@ -9,6 +9,7 @@
 #include "ui_screens.h"
 #include "network.h"
 #include "gravity_ball.h"
+#include "audio.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -196,6 +197,9 @@ static void tile_reveal_timer_cb(lv_timer_t *timer)
             if (dist_sq <= (float)(ball_r * ball_r)) {
                 /* Ball overlaps this tile - reveal it with 2-phase animation */
                 s_tile_revealed[idx] = true;
+
+                /* Play collision sound effect */
+                audio_play_hit();
                 if (s_tiles[idx] != NULL) {
                     /* Hide border when revealing */
                     lv_anim_t ba;

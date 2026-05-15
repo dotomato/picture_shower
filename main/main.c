@@ -20,6 +20,7 @@
 #include "ui_screens.h"
 #include "gravity_ball.h"
 #include "touch_input.h"
+#include "audio.h"
 
 static const char *TAG = "startup";
 
@@ -111,6 +112,14 @@ void app_main(void)
 
     bsp_display_unlock();
     LOG_RAM("after show_init_screen");
+
+    /* Initialize audio (ES8311 codec for collision sound effects) */
+    if (audio_init() == ESP_OK) {
+        ESP_LOGI(TAG, "Audio initialized");
+    } else {
+        ESP_LOGW(TAG, "Audio init failed (non-critical)");
+    }
+    LOG_RAM("after audio_init");
 
     /* Start gravity ball update task (runs outside LVGL lock) */
     if (ball_ret == ESP_OK) {
