@@ -13,7 +13,6 @@
 #include "esp_spiffs.h"
 #include "bsp/esp-bsp.h"
 #include "bsp/display.h"
-
 #include "axp2101.h"
 #include "status_bar.h"
 #include "network.h"
@@ -21,6 +20,7 @@
 #include "gravity_ball.h"
 #include "touch_input.h"
 #include "audio.h"
+#include "deep_sleep.h"
 
 static const char *TAG = "startup";
 
@@ -91,6 +91,9 @@ void app_main(void)
 
     /* Initialize AXP2101 PMU (battery management) */
     axp2101_init();
+
+    /* Initialize deep sleep module (GPIO16 button + display on/off) */
+    deep_sleep_init();
 
     /* Create status bar on sys_layer (always visible: FPS | RAM | Battery) */
     status_bar_create();
