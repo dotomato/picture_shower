@@ -18,6 +18,8 @@
 #include "status_bar.h"
 #include "network.h"
 #include "ui_screens.h"
+#include "gravity_ball.h"
+#include "touch_input.h"
 
 static const char *TAG = "startup";
 
@@ -95,8 +97,25 @@ void app_main(void)
     /* Show initializing screen */
     ui_show_init_screen();
 
+    /* Initialize gravity ball (QMI8658 accelerometer) */
+    i2c_master_bus_handle_t i2c_bus = bsp_i2c_get_handle();
+    esp_err_t ball_ret = gravity_ball_init(i2c_bus);
+    if (ball_ret == ESP_OK) {
+        ESP_LOGI(TAG, "Gravity ball initialized");
+    } else {
+        ESP_LOGW(TAG, "Gravity ball init failed: %s", esp_err_to_name(ball_ret));
+    }
+
+    /* Initialize touch input (tap to switch images) */
+    touch_input_init();
+
     bsp_display_unlock();
     LOG_RAM("after show_init_screen");
+
+    /* Start gravity ball update task (runs outside LVGL lock) */
+    if (ball_ret == ESP_OK) {
+        gravity_ball_start();
+    }
 
     /* Launch background net_task (WiFi init happens inside, after LVGL first render) */
     ESP_LOGI(TAG, "Creating net_task (stack=16KB, prio=3, PSRAM)...");

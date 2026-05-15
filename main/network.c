@@ -236,6 +236,16 @@ void fetch_piclist(void)
         ui_log("Downloading images...");
         s_pic_count = 0;
 
+        /* Save new piclist.txt to SPIFFS BEFORE parsing (parsing modifies body) */
+        FILE *f = fopen("/spiffs/piclist.txt", "w");
+        if (f != NULL) {
+            fwrite(body, 1, total, f);
+            fclose(f);
+            ESP_LOGI(TAG, "Saved new piclist.txt to SPIFFS");
+        } else {
+            ESP_LOGE(TAG, "Failed to save piclist.txt");
+        }
+
         /* Parse image filenames (lines after the first) */
         char *line = first_nl + 1;
         char *next;
@@ -275,15 +285,6 @@ void fetch_piclist(void)
 
         ESP_LOGI(TAG, "Downloaded %d image(s)", s_pic_count);
 
-        /* Save new piclist.txt to SPIFFS (overwrite) */
-        FILE *f = fopen("/spiffs/piclist.txt", "w");
-        if (f != NULL) {
-            fwrite(body, 1, total, f);
-            fclose(f);
-            ESP_LOGI(TAG, "Saved new piclist.txt to SPIFFS");
-        } else {
-            ESP_LOGE(TAG, "Failed to save piclist.txt");
-        }
         free(body);
     }
 }

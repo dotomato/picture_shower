@@ -2,6 +2,8 @@
 dependencies:
   waveshare/esp32_s3_touch_amoled_2_16:
     version: "*"
+  waveshare/qmi8658:
+    version: "*"
   lvgl/lvgl:
     version: "9.*"
     public: true
