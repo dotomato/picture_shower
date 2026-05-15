@@ -4,6 +4,7 @@ build/
 
 # IDF Component Manager - auto-downloaded, can be restored via idf.py update-dependencies
 managed_components/
+dependencies.lock
 
 # Large font files (can be re-added manually if needed)
 *.ttf
