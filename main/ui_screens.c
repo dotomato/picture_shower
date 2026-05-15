@@ -44,6 +44,10 @@ static bool s_slideshow_active = false;
 #define TILE_W          (SCREEN_SIZE / TILE_COLS)   /* 60 px */
 #define TILE_H          (SCREEN_SIZE / TILE_ROWS)   /* 60 px */
 #define TILE_DARK_OPA   200   /* Opacity of dark overlay (0=transparent, 255=opaque) */
+#define TILE_REVEALED_OPA 50  /* Final opacity after reveal: ~80% brightness (0=full bright, 255=full dark) */
+#define TILE_OVEREXPOSE_OPA 140 /* Peak white overlay opacity for overexposure flash */
+#define TILE_BORDER_OPA  60   /* Border opacity for unrevealed tiles */
+#define TILE_BORDER_W    1    /* Border width for unrevealed tiles */
 
 /* Tile state */
 static lv_obj_t *s_tiles[TILE_COUNT];
@@ -86,9 +90,70 @@ void ui_log(const char *msg)
  * ------------------------------------------------------- */
 
 /* Animation helper: set bg_opa on object */
-static void lv_obj_set_style_bg_opa_anim_cb(void *obj, int32_t val)
+static void tile_bg_opa_anim_cb(void *obj, int32_t val)
 {
     lv_obj_set_style_bg_opa((lv_obj_t *)obj, (lv_opa_t)val, 0);
+}
+
+/* Animation helper: set border_opa on object */
+static void tile_border_opa_anim_cb(void *obj, int32_t val)
+{
+    lv_obj_set_style_border_opa((lv_obj_t *)obj, (lv_opa_t)val, 0);
+}
+
+/**
+ * Phase-2 done callback: overexposure has faded out completely.
+ * Tile is now fully transparent, showing the original image at 100% brightness.
+ */
+static void tile_reveal_phase2_done_cb(lv_anim_t *anim)
+{
+    (void)anim; /* Nothing to do, tile stays transparent (opa=0) */
+}
+
+/**
+ * Phase-3 callback: after overexposure peak, fade white overlay out.
+ * White opa 140 -> 0 over 500ms.
+ */
+static void tile_reveal_phase2_done_cb_chain(lv_anim_t *anim)
+{
+    lv_obj_t *tile = (lv_obj_t *)anim->var;
+    if (tile == NULL) return;
+
+    /* Phase 3: white flash fade out */
+    lv_anim_t a3;
+    lv_anim_init(&a3);
+    lv_anim_set_var(&a3, tile);
+    lv_anim_set_values(&a3, TILE_OVEREXPOSE_OPA, 0);
+    lv_anim_set_duration(&a3, 500);
+    lv_anim_set_exec_cb(&a3, (lv_anim_exec_xcb_t)tile_bg_opa_anim_cb);
+    lv_anim_set_path_cb(&a3, lv_anim_path_ease_in);
+    lv_anim_set_completed_cb(&a3, tile_reveal_phase2_done_cb);
+    lv_anim_start(&a3);
+}
+
+/**
+ * Phase-2 callback: overexposure ramp up.
+ * Switch tile bg to WHITE and animate opacity 0 -> 140 over 150ms,
+ * then chain to Phase 3 (fade out).
+ */
+static void tile_reveal_phase1_done_cb(lv_anim_t *anim)
+{
+    lv_obj_t *tile = (lv_obj_t *)anim->var;
+    if (tile == NULL) return;
+
+    /* Switch tile color from black to white for overexposure effect */
+    lv_obj_set_style_bg_color(tile, lv_color_white(), 0);
+
+    /* Phase 2: white ramp up 0 -> TILE_OVEREXPOSE_OPA */
+    lv_anim_t a2;
+    lv_anim_init(&a2);
+    lv_anim_set_var(&a2, tile);
+    lv_anim_set_values(&a2, 0, TILE_OVEREXPOSE_OPA);
+    lv_anim_set_duration(&a2, 150);
+    lv_anim_set_exec_cb(&a2, (lv_anim_exec_xcb_t)tile_bg_opa_anim_cb);
+    lv_anim_set_path_cb(&a2, lv_anim_path_ease_out);
+    lv_anim_set_completed_cb(&a2, tile_reveal_phase2_done_cb_chain);
+    lv_anim_start(&a2);
 }
 
 /**
@@ -129,17 +194,28 @@ static void tile_reveal_timer_cb(lv_timer_t *timer)
             float dist_sq = dx * dx + dy * dy;
 
             if (dist_sq <= (float)(ball_r * ball_r)) {
-                /* Ball overlaps this tile - reveal it with fade animation */
+                /* Ball overlaps this tile - reveal it with 2-phase animation */
                 s_tile_revealed[idx] = true;
                 if (s_tiles[idx] != NULL) {
-                    /* Animate opacity from dark to transparent */
+                    /* Hide border when revealing */
+                    lv_anim_t ba;
+                    lv_anim_init(&ba);
+                    lv_anim_set_var(&ba, s_tiles[idx]);
+                    lv_anim_set_values(&ba, TILE_BORDER_OPA, 0);
+                    lv_anim_set_duration(&ba, 150);
+                    lv_anim_set_exec_cb(&ba, (lv_anim_exec_xcb_t)tile_border_opa_anim_cb);
+                    lv_anim_start(&ba);
+
+                    /* Phase 1: dark black -> transparent (opa 200 -> 0) */
                     lv_anim_t anim;
                     lv_anim_init(&anim);
                     lv_anim_set_var(&anim, s_tiles[idx]);
                     lv_anim_set_values(&anim, TILE_DARK_OPA, 0);
-                    lv_anim_set_duration(&anim, 300);
-                    lv_anim_set_exec_cb(&anim, (lv_anim_exec_xcb_t)lv_obj_set_style_bg_opa_anim_cb);
+                    lv_anim_set_duration(&anim, 150);
+                    lv_anim_set_exec_cb(&anim, (lv_anim_exec_xcb_t)tile_bg_opa_anim_cb);
                     lv_anim_set_path_cb(&anim, lv_anim_path_ease_out);
+                    /* When phase 1 ends, phase 2 starts: white overexposure flash */
+                    lv_anim_set_completed_cb(&anim, tile_reveal_phase1_done_cb);
                     lv_anim_start(&anim);
                 }
             }
@@ -167,8 +243,10 @@ static void create_tile_overlay(lv_obj_t *parent)
             lv_obj_set_style_bg_color(tile, lv_color_black(), 0);
             lv_obj_set_style_bg_opa(tile, TILE_DARK_OPA, 0);
 
-            /* No border, no radius for seamless grid */
-            lv_obj_set_style_border_width(tile, 0, 0);
+            /* Light white border to make unrevealed tiles visible */
+            lv_obj_set_style_border_color(tile, lv_color_white(), 0);
+            lv_obj_set_style_border_width(tile, TILE_BORDER_W, 0);
+            lv_obj_set_style_border_opa(tile, TILE_BORDER_OPA, 0);
             lv_obj_set_style_radius(tile, 0, 0);
 
             /* Disable scrolling and input on tiles */
