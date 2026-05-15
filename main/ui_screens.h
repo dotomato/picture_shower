@@ -4,6 +4,8 @@
  */
 #pragma once
 
+#include <stdbool.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -45,6 +47,27 @@ void ui_next_image(void);
  * Resets all tiles to dark state.
  */
 void ui_prev_image(void);
+
+/**
+ * Get the current picture index.
+ */
+int ui_get_pic_index(void);
+
+/**
+ * Get the revealed state of all tiles.
+ * @param out_revealed Output array (must have at least 'count' elements)
+ * @param count Number of tiles to read
+ */
+void ui_get_tile_revealed(bool *out_revealed, int count);
+
+/**
+ * Restore game state: show image at given index with pre-revealed tiles.
+ * Must be called from a context where LVGL async calls are safe.
+ * @param pic_index Image index to display
+ * @param revealed Array of tile revealed states
+ * @param count Number of tiles
+ */
+void ui_restore_state(int pic_index, const bool *revealed, int count);
 
 #ifdef __cplusplus
 }

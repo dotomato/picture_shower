@@ -455,3 +455,73 @@ void ui_show_image_screen(const char *spiffs_path)
 
     ESP_LOGI(TAG, "show_image_screen done: %s (tiles=%dx%d)", spiffs_path, TILE_COLS, TILE_ROWS);
 }
+
+/* -------------------------------------------------------
+ * Game state getters/setters (for save/restore)
+ * ------------------------------------------------------- */
+
+int ui_get_pic_index(void)
+{
+    return s_pic_index;
+}
+
+void ui_get_tile_revealed(bool *out_revealed, int count)
+{
+    int n = (count < TILE_COUNT) ? count : TILE_COUNT;
+    for (int i = 0; i < n; i++) {
+        out_revealed[i] = s_tile_revealed[i];
+    }
+}
+
+/* Restore state context passed via async call */
+typedef struct {
+    int  pic_index;
+    bool revealed[TILE_COUNT];
+} restore_ctx_t;
+
+static restore_ctx_t s_restore_ctx;
+
+static void restore_state_async_cb(void *arg)
+{
+    restore_ctx_t *ctx = (restore_ctx_t *)arg;
+    int count = piclist_get_count();
+    if (count == 0) {
+        ESP_LOGW(TAG, "Cannot restore state: no images in piclist");
+        return;
+    }
+
+    /* Clamp pic_index to valid range */
+    int idx = ctx->pic_index;
+    if (idx < 0 || idx >= count) idx = 0;
+    s_pic_index = idx;
+    s_slideshow_active = true;
+
+    /* Show the image */
+    ui_show_image_screen(piclist_get_path(s_pic_index));
+
+    /* Apply revealed tile states (make revealed tiles transparent) */
+    for (int i = 0; i < TILE_COUNT; i++) {
+        if (ctx->revealed[i] && s_tiles[i] != NULL) {
+            s_tile_revealed[i] = true;
+            /* Immediately set tile to transparent (no animation) */
+            lv_obj_set_style_bg_opa(s_tiles[i], 0, 0);
+            lv_obj_set_style_border_opa(s_tiles[i], 0, 0);
+        }
+    }
+
+    ESP_LOGI(TAG, "Game state restored: pic_index=%d", s_pic_index);
+}
+
+void ui_restore_state(int pic_index, const bool *revealed, int count)
+{
+    s_restore_ctx.pic_index = pic_index;
+    int n = (count < TILE_COUNT) ? count : TILE_COUNT;
+    for (int i = 0; i < n; i++) {
+        s_restore_ctx.revealed[i] = revealed[i];
+    }
+    /* Zero remaining if count < TILE_COUNT */
+    for (int i = n; i < TILE_COUNT; i++) {
+        s_restore_ctx.revealed[i] = false;
+    }
+    lv_async_call(restore_state_async_cb, &s_restore_ctx);
+}

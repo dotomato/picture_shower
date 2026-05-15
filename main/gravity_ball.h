@@ -44,6 +44,19 @@ void gravity_ball_get_position(float *x, float *y);
  */
 int gravity_ball_get_radius(void);
 
+/**
+ * Get the current ball velocity.
+ * @param vx pointer to receive X velocity
+ * @param vy pointer to receive Y velocity
+ */
+void gravity_ball_get_velocity(float *vx, float *vy);
+
+/**
+ * Set the ball position and velocity (for state restore).
+ * Must be called after gravity_ball_init and before or after gravity_ball_start.
+ */
+void gravity_ball_set_state(float x, float y, float vx, float vy);
+
 #ifdef __cplusplus
 }
 #endif

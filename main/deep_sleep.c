@@ -14,6 +14,7 @@
 #include "bsp/display.h"
 
 #include "deep_sleep.h"
+#include "game_state.h"
 
 #define DEEP_SLEEP_GPIO_PIN  GPIO_NUM_16
 
@@ -43,7 +44,10 @@ static void deep_sleep_task(void *arg)
                     vTaskDelay(pdMS_TO_TICKS(20));
                 }
 
-                ESP_LOGI(TAG, "GPIO16 button RELEASED - turning off display and entering deep sleep");
+                ESP_LOGI(TAG, "GPIO16 button RELEASED - saving game state and entering deep sleep");
+
+                /* Save game state to RTC RAM before sleeping */
+                game_state_save();
 
                 /* Turn off display backlight before sleeping */
                 bsp_display_backlight_off();
@@ -77,10 +81,10 @@ void deep_sleep_init(void)
 
     /* Create event queue and task */
     s_gpio_evt_queue = xQueueCreate(10, sizeof(uint32_t));
-    xTaskCreate(deep_sleep_task, "deep_sleep_task", 2048, NULL, 10, NULL);
+xTaskCreate(deep_sleep_task, "deep_sleep_task", 4096, NULL, 10, NULL);
 
-    /* Install ISR service and add handler */
-    gpio_install_isr_service(0);
+    /* ISR service already installed by BSP, no need to call gpio_install_isr_service() */
+    // gpio_install_isr_service(0);
     gpio_isr_handler_add(DEEP_SLEEP_GPIO_PIN, gpio_isr_handler, (void *)DEEP_SLEEP_GPIO_PIN);
 
     ESP_LOGI(TAG, "Deep sleep module initialized (GPIO16, ANYEDGE, pull-up)");

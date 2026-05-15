@@ -21,6 +21,7 @@
 #include "touch_input.h"
 #include "audio.h"
 #include "deep_sleep.h"
+#include "game_state.h"
 
 static const char *TAG = "startup";
 
@@ -130,23 +131,51 @@ void app_main(void)
     }
 
     /* Launch background net_task (WiFi init happens inside, after LVGL first render) */
-    ESP_LOGI(TAG, "Creating net_task (stack=16KB, prio=3, PSRAM)...");
-    StaticTask_t *task_buf = heap_caps_malloc(sizeof(StaticTask_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    StackType_t  *stack_buf = heap_caps_malloc(16 * 1024, MALLOC_CAP_SPIRAM);
-    if (task_buf == NULL || stack_buf == NULL) {
-        ESP_LOGE(TAG, "Failed to allocate net_task buffers (task_buf=%p, stack_buf=%p)", task_buf, stack_buf);
-        if (task_buf)  heap_caps_free(task_buf);
-        if (stack_buf) heap_caps_free(stack_buf);
-    } else {
-        TaskHandle_t task_handle = xTaskCreateStatic(net_task, "net_task",
-                                                     16 * 1024, NULL, 3,
-                                                     stack_buf, task_buf);
-        if (task_handle == NULL) {
-            ESP_LOGE(TAG, "Failed to create net_task!");
-            heap_caps_free(task_buf);
-            heap_caps_free(stack_buf);
+    /* Check if we have a saved game state from deep sleep */
+    if (game_state_is_valid()) {
+        ESP_LOGI(TAG, "Valid game state found in RTC RAM - restoring without WiFi");
+        const game_state_t *state = game_state_get();
+
+        /* Load image list from local cache (no WiFi needed) */
+        load_piclist_from_cache();
+
+        if (piclist_get_count() > 0) {
+            /* Restore ball position/velocity */
+            gravity_ball_set_state(state->ball_pos_x, state->ball_pos_y,
+                                   state->ball_vel_x, state->ball_vel_y);
+
+            /* Restore UI state (image + revealed tiles) */
+            ui_restore_state(state->pic_index, state->tile_revealed, GAME_STATE_TILE_COUNT);
+
+            ESP_LOGI(TAG, "Game state restored successfully");
         } else {
-            ESP_LOGI(TAG, "net_task created successfully (PSRAM stack)");
+            ESP_LOGW(TAG, "No cached images available, falling back to net_task");
+            goto launch_net_task;
+        }
+
+        /* Invalidate state so next cold boot goes through normal flow */
+        game_state_invalidate();
+    } else {
+launch_net_task:
+        ESP_LOGI(TAG, "No saved game state - normal startup with WiFi");
+        ESP_LOGI(TAG, "Creating net_task (stack=16KB, prio=3, PSRAM)...");
+        StaticTask_t *task_buf = heap_caps_malloc(sizeof(StaticTask_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        StackType_t  *stack_buf = heap_caps_malloc(16 * 1024, MALLOC_CAP_SPIRAM);
+        if (task_buf == NULL || stack_buf == NULL) {
+            ESP_LOGE(TAG, "Failed to allocate net_task buffers (task_buf=%p, stack_buf=%p)", task_buf, stack_buf);
+            if (task_buf)  heap_caps_free(task_buf);
+            if (stack_buf) heap_caps_free(stack_buf);
+        } else {
+            TaskHandle_t task_handle = xTaskCreateStatic(net_task, "net_task",
+                                                         16 * 1024, NULL, 3,
+                                                         stack_buf, task_buf);
+            if (task_handle == NULL) {
+                ESP_LOGE(TAG, "Failed to create net_task!");
+                heap_caps_free(task_buf);
+                heap_caps_free(stack_buf);
+            } else {
+                ESP_LOGI(TAG, "net_task created successfully (PSRAM stack)");
+            }
         }
     }
     LOG_RAM("app_main: done");

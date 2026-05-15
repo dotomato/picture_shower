@@ -358,3 +358,26 @@ int gravity_ball_get_radius(void)
 {
     return BALL_RADIUS;
 }
+
+void gravity_ball_get_velocity(float *vx, float *vy)
+{
+    if (vx) *vx = s_vel_x;
+    if (vy) *vy = s_vel_y;
+}
+
+void gravity_ball_set_state(float x, float y, float vx, float vy)
+{
+    s_pos_x = x;
+    s_pos_y = y;
+    s_vel_x = vx;
+    s_vel_y = vy;
+
+    /* Update LVGL object position if ball exists */
+    if (s_ball != NULL) {
+        lv_obj_set_pos(s_ball,
+                       (int32_t)(s_pos_x - BALL_RADIUS),
+                       (int32_t)(s_pos_y - BALL_RADIUS));
+    }
+
+    ESP_LOGI(TAG, "Ball state restored: pos=(%.0f,%.0f) vel=(%.1f,%.1f)", x, y, vx, vy);
+}
