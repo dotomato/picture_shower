@@ -28,7 +28,12 @@ static char s_ui_log_buf[UI_LOG_BUF_SIZE];
 
 /* Slideshow state */
 static int s_pic_index = 0;
-static lv_timer_t *s_slideshow_timer = NULL;
+static bool s_slideshow_active = false;
+
+/* Pan animation config */
+#define PAN_DISTANCE_PX   150  /* pixels to pan from right to left */
+#define PAN_DURATION_MS   3000 /* duration of the pan animation */
+static lv_obj_t *s_current_img = NULL;
 
 /* Hardware JPEG decode buffer (PSRAM): reused across slides */
 static uint8_t          *s_jpeg_rgb_buf  = NULL;
@@ -61,13 +66,62 @@ void ui_log(const char *msg)
 }
 
 /* -------------------------------------------------------
- * Slideshow
+ * Slideshow with pan animation
  * ------------------------------------------------------- */
-static void slideshow_timer_cb(lv_timer_t *timer)
+
+/* Forward declaration */
+static void slideshow_show_next_async(void *arg);
+
+/* Animation exec callback: move image X position */
+static void pan_anim_exec_cb(void *obj, int32_t val)
 {
+    lv_obj_set_x((lv_obj_t *)obj, val);
+}
+
+/* Animation completed callback: advance to next image */
+static void pan_anim_completed_cb(lv_anim_t *anim)
+{
+    if (!s_slideshow_active) return;
     int count = piclist_get_count();
     if (count == 0) return;
     s_pic_index = (s_pic_index + 1) % count;
+    /* Use async call to show next image (safe from anim context) */
+    lv_async_call(slideshow_show_next_async, NULL);
+}
+
+/* Start pan animation on the current image object.
+ * img_w / img_h are the decoded pixel dimensions (known at decode time). */
+static void start_pan_animation(lv_obj_t *img, int32_t img_w, int32_t img_h)
+{
+    if (img == NULL) return;
+
+    /* Screen is 480x480; calculate centered position using known image size */
+    int32_t scr_w = 480;
+    int32_t center_x = (scr_w - img_w) / 2;
+
+    /* Start right of center, end left of center */
+    int32_t start_x = center_x + PAN_DISTANCE_PX / 2;
+    int32_t end_x   = center_x - PAN_DISTANCE_PX / 2;
+
+    /* Set initial position explicitly (no lv_obj_center) */
+    lv_obj_set_x(img, start_x);
+
+    lv_anim_t anim;
+    lv_anim_init(&anim);
+    lv_anim_set_var(&anim, img);
+    lv_anim_set_values(&anim, start_x, end_x);
+    lv_anim_set_duration(&anim, PAN_DURATION_MS);
+    lv_anim_set_exec_cb(&anim, pan_anim_exec_cb);
+    lv_anim_set_completed_cb(&anim, pan_anim_completed_cb);
+    lv_anim_set_path_cb(&anim, lv_anim_path_ease_in_out);
+    lv_anim_start(&anim);
+}
+
+static void slideshow_show_next_async(void *arg)
+{
+    if (!s_slideshow_active) return;
+    int count = piclist_get_count();
+    if (count == 0) return;
     ui_show_image_screen(piclist_get_path(s_pic_index));
 }
 
@@ -75,14 +129,10 @@ static void start_slideshow_async_cb(void *arg)
 {
     int count = piclist_get_count();
     if (count == 0) return;
+    s_slideshow_active = true;
     /* Show first image immediately */
     s_pic_index = 0;
     ui_show_image_screen(piclist_get_path(0));
-    /* Start 3-second timer to cycle through images */
-    if (s_slideshow_timer != NULL) {
-        lv_timer_del(s_slideshow_timer);
-    }
-    s_slideshow_timer = lv_timer_create(slideshow_timer_cb, 3000, NULL);
 }
 
 void ui_start_slideshow(void)
@@ -215,7 +265,19 @@ void ui_show_image_screen(const char *spiffs_path)
 
     lv_obj_t *img = lv_image_create(act_scr);
     lv_image_set_src(img, &s_img_dsc);
-    lv_obj_center(img);
+    /* Center vertically, horizontal position managed by animation */
+    int32_t center_y = (480 - (int32_t)hdr.height) / 2;
+    lv_obj_set_y(img, center_y);
+    s_current_img = img;
+
+    /* Start pan animation if slideshow is active */
+    if (s_slideshow_active) {
+        start_pan_animation(img, (int32_t)hdr.width, (int32_t)hdr.height);
+    } else {
+        /* Static display: just center horizontally */
+        int32_t center_x = (480 - (int32_t)hdr.width) / 2;
+        lv_obj_set_x(img, center_x);
+    }
 
     ESP_LOGI(TAG, "show_image_screen done: %s", spiffs_path);
 }
